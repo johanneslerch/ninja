@@ -4044,4 +4044,8 @@ TEST_F(BuildTest, RebuildMissingDynamicOutputs) {
   ASSERT_EQ(1u, command_runner.commands_ran_.size());
 
   builder.command_runner_.release();
+
+  deps_log.Close();
+  RealDiskInterface disk_interface;
+  disk_interface.RemoveFile("ninja_deps");
 }
