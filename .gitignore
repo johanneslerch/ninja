@@ -4,6 +4,7 @@
 *.pdb
 *.ilk
 /build*/
+/release-build
 /build.ninja
 /ninja
 /ninja.bootstrap
