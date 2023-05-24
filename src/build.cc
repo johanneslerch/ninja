@@ -784,19 +784,18 @@ bool Builder::FinishCommand(CommandRunner::Result* result, string* err) {
   string logfile = edge->GetUnescapedLogfile();
   if (!logfile.empty())
   {
-    if (!result->output.empty()) {
-      disk_interface_->WriteFile(logfile, StripAnsiEscapeCodes(result->output));
-      if (scan_.build_log()) {
-        if (!scan_.build_log()->RecordLogFile(edge, logfile, start_time_millis, end_time_millis,
-                                              disk_interface_->Stat(logfile, err))) {
-          *err = string("Error writing to build log: ") + strerror(errno);
-          return false;
-        }
+    string msg = (!result->output.empty()) ? result->output : "";
+    disk_interface_->WriteFile(logfile, StripAnsiEscapeCodes(msg));
+    if (scan_.build_log()) {
+      if (!scan_.build_log()->RecordLogFile(edge, logfile, start_time_millis, end_time_millis,
+                                            disk_interface_->Stat(logfile, err))) {
+        *err = string("Error writing to build log: ") + strerror(errno);
+        return false;
       }
     }
-    else
-      disk_interface_->RemoveFile(logfile);
   }
+  else
+    disk_interface_->RemoveFile(logfile);
 
   // The rest of this function only applies to successful commands.
   if (!result->success()) {
