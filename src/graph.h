@@ -252,6 +252,8 @@ struct Edge {
   bool is_phony() const;
   bool use_console() const;
   bool maybe_phonycycle_diagnostic() const;
+
+  std::string to_string() const;
 };
 
 struct EdgeCmp {
