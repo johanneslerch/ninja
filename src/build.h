@@ -25,6 +25,8 @@
 #include "graph.h"
 #include "exit_status.h"
 #include "util.h"  // int64_t
+#include "line_printer.h"
+#include "metrics.h"
 
 struct BuildLog;
 struct Builder;
@@ -33,6 +35,9 @@ struct Edge;
 struct Node;
 struct State;
 struct Status;
+
+const uint64_t kStillRunningDelayMsec = 3000;
+const int kStillRunningFPS = 4;
 
 /// Plan stores the state of a build plan: what we intend to build,
 /// which steps we're ready to execute.
@@ -47,6 +52,9 @@ struct Plan {
   // Pop a ready edge off the queue of edges to build.
   // Returns NULL if there's no work to do.
   Edge* FindWork();
+
+  // Returns true if there are edges waiting to run now.
+  bool HasWork() const { return !ready_.empty(); }
 
   /// Returns true if there's more work to be done.
   bool more_to_do() const { return wanted_edges_ > 0 && command_edges_ > 0; }
@@ -159,6 +167,9 @@ struct CommandRunner {
   /// Wait for a command to complete, or return false if interrupted.
   virtual bool WaitForCommand(Result* result) = 0;
 
+  /// Return command output collected so far
+  virtual void PeekCommandOutput(Edge* edge, std::string* out) {}
+
   virtual std::vector<Edge*> GetActiveEdges() { return std::vector<Edge*>(); }
   virtual void Abort() {}
 };
@@ -213,6 +224,8 @@ struct Builder {
   /// Update status ninja logs following a command termination.
   /// @return false if the build can not proceed further due to a fatal error.
   bool FinishCommand(CommandRunner::Result* result, std::string* err);
+
+  void ReportProgress(void);
 
   /// Used for tests.
   void SetBuildLog(BuildLog* log) {
