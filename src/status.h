@@ -55,6 +55,8 @@ struct StatusPrinter : Status {
   virtual void BuildEdgeFinished(Edge* edge, int64_t start_time_millis,
                                  int64_t end_time_millis, bool success,
                                  const std::string& output);
+  virtual void BuildEdgeStillRunning(Edge* edge);
+  virtual void BuildEdgeRunningSolo(Edge* edge, const std::string& output);
   virtual void BuildLoadDyndeps();
   virtual void BuildStarted();
   virtual void BuildFinished();
@@ -75,6 +77,8 @@ struct StatusPrinter : Status {
 
  private:
   void PrintStatus(const Edge* edge, int64_t time_millis);
+  void RestartStillRunningDelay();
+  void BuildEdgeFinishedSolo(Edge* edge, bool success, const std::string& output);
 
   const BuildConfig& config_;
 
@@ -106,6 +110,14 @@ struct StatusPrinter : Status {
 
   /// Prints progress output.
   LinePrinter printer_;
+
+  /// Timestamp when the next frame with the 'still running' spinner should be
+  /// displayed. Reset when regular edge start/end notifications are printed.
+  int64_t next_progress_update_at_;
+
+  /// Counts how much was printed so far for an edge running solo.
+  /// Non-zero means that only one edge can be running.
+  size_t solo_bytes_printed_;
 
   /// The custom progress status format to use.
   const char* progress_status_format_;

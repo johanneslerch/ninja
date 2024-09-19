@@ -31,14 +31,15 @@
 #include <io.h>
 #endif
 
+#include <assert.h>
 #include "debug_flags.h"
 
 using namespace std;
 
 StatusPrinter::StatusPrinter(const BuildConfig& config)
     : config_(config), started_edges_(0), finished_edges_(0), total_edges_(0),
-      running_edges_(0), progress_status_format_(NULL),
-      current_rate_(config.parallelism) {
+      running_edges_(0), next_progress_update_at_(0), solo_bytes_printed_(0),
+      progress_status_format_(NULL), current_rate_(config.parallelism) {
   // Don't do anything fancy in verbose mode.
   if (config_.verbosity != BuildConfig::NORMAL)
     printer_.set_smart_terminal(false);
@@ -84,6 +85,10 @@ void StatusPrinter::BuildEdgeStarted(const Edge* edge,
 
   if (edge->use_console() || printer_.is_smart_terminal())
     PrintStatus(edge, start_time_millis);
+
+   // Edge running solo is supposed to keep running alone.
+    assert(solo_bytes_printed_ == 0);
+    RestartStillRunningDelay();
 
   if (edge->use_console())
     printer_.SetConsoleLocked(true);
@@ -172,7 +177,7 @@ void StatusPrinter::BuildEdgeFinished(Edge* edge, int64_t start_time_millis,
                                       int64_t end_time_millis, bool success,
                                       const string& output) {
   time_millis_ = end_time_millis;
-  ++finished_edges_;
+
 
   int64_t elapsed = end_time_millis - start_time_millis;
   cpu_time_millis_ += elapsed;
@@ -191,6 +196,16 @@ void StatusPrinter::BuildEdgeFinished(Edge* edge, int64_t start_time_millis,
   if (config_.verbosity == BuildConfig::QUIET)
     return;
 
+  RestartStillRunningDelay();
+  if (solo_bytes_printed_ > 0) {
+    // Special treatment to edges status
+    BuildEdgeFinishedSolo(edge, success, output);
+    return;
+  }
+  else{
+    ++finished_edges_;
+  }
+
   if (!edge->use_console())
     PrintStatus(edge, end_time_millis);
 
@@ -208,7 +223,6 @@ void StatusPrinter::BuildEdgeFinished(Edge* edge, int64_t start_time_millis,
     } else {
         printer_.PrintOnNewLine("FAILED: " + outputs + "\n");
     }
-    printer_.PrintOnNewLine(edge->EvaluateCommand() + "\n");
   }
 
   if (!output.empty()) {
@@ -240,6 +254,60 @@ void StatusPrinter::BuildEdgeFinished(Edge* edge, int64_t start_time_millis,
     _setmode(_fileno(stdout), _O_TEXT);  // End Windows extra CR fix
 #endif
   }
+}
+
+void StatusPrinter::BuildEdgeStillRunning(Edge* edge)
+{
+  if (config_.verbosity == BuildConfig::QUIET)
+    return;
+
+  int64_t now = GetTimeMillis();
+  if (next_progress_update_at_ > now)
+    return;
+
+  static int ctr = 0;
+  char status[32];
+  snprintf(status, sizeof(status), " (still running.. %c)", "/-\\|"[ctr++ % 4]);
+
+  PrintStatus(edge, now);
+  next_progress_update_at_ = now + 1000/kStillRunningFPS;
+}
+
+void StatusPrinter::RestartStillRunningDelay()
+{
+  next_progress_update_at_ = GetTimeMillis() + kStillRunningDelayMsec;
+}
+
+void StatusPrinter::BuildEdgeRunningSolo(Edge* edge, const string& output)
+{
+  if (config_.verbosity == BuildConfig::QUIET)
+    return;
+
+  if (output.size() > solo_bytes_printed_) {
+    if (solo_bytes_printed_ == 0) {
+      // Print edge description before starting to print its output
+      ++finished_edges_;
+      PrintStatus(edge, GetTimeMillis());
+      printer_.PrintOnNewLine("");
+    }
+
+    printer_.PrintRaw(output.substr(solo_bytes_printed_));
+    solo_bytes_printed_ = output.size();
+  }
+}
+
+void StatusPrinter::BuildEdgeFinishedSolo(Edge* edge,
+                                        bool success,
+                                        const string& output)
+{
+  // Print reminders of the output, if any
+  BuildEdgeRunningSolo(edge, output);
+
+  // Print the command that has failed
+  if (!success)
+    printer_.PrintOnNewLine("^^FAILED: " + edge->EvaluateCommand() + "\n");
+
+  solo_bytes_printed_ = 0;
 }
 
 void StatusPrinter::BuildLoadDyndeps() {
